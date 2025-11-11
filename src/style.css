@@ -718,6 +718,16 @@ header {
   min-width: 150px;
 }
 
+.leads-table th.col-saturation {
+  width: 15%;
+  min-width: 150px;
+}
+
+.leads-table th.col-validation {
+  width: 15%;
+  min-width: 150px;
+}
+
 .leads-table th.col-pain-points {
   width: 25%;
   min-width: 200px;
@@ -1190,6 +1200,16 @@ footer {
     min-width: 120px;
   }
 
+  .leads-table th.col-saturation {
+    width: 12%;
+    min-width: 120px;
+  }
+
+  .leads-table th.col-validation {
+    width: 12%;
+    min-width: 120px;
+  }
+
   .leads-table th.col-pain-points {
     width: 30%;
     min-width: 180px;
@@ -1244,6 +1264,8 @@ footer {
   .leads-table th.col-name,
   .leads-table th.col-description,
   .leads-table th.col-tags,
+  .leads-table th.col-saturation,
+  .leads-table th.col-validation,
   .leads-table th.col-pain-points {
     min-width: 100px;
   }

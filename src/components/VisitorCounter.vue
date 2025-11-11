@@ -6,15 +6,19 @@
 </template>
 
 <script>
+import { visitorsAPI } from '../data/apiClient'
+
 export default {
   name: 'VisitorCounter',
   data() {
     return {
-      visitorCount: 0
+      visitorCount: 0,
+      loading: true
     }
   },
   computed: {
     formattedCount() {
+      if (this.loading) return '...'
       return this.visitorCount.toLocaleString()
     }
   },
@@ -22,15 +26,26 @@ export default {
     this.incrementVisitor()
   },
   methods: {
-    incrementVisitor() {
-      // Get current count from localStorage
-      let count = parseInt(localStorage.getItem('visitorCount') || '0', 10)
-      
-      // Increment on every page load
-      count++
-      localStorage.setItem('visitorCount', count.toString())
-      
-      this.visitorCount = count
+    async incrementVisitor() {
+      try {
+        // First, get current count
+        const countResponse = await visitorsAPI.getCount()
+        this.visitorCount = countResponse.totalVisitors || 0
+        this.loading = false
+        
+        // Then increment (fire and forget - don't wait for response)
+        visitorsAPI.increment().catch(err => {
+          console.warn('Failed to increment visitor count:', err)
+        })
+      } catch (error) {
+        console.error('Error fetching visitor count:', error)
+        this.loading = false
+        // Fallback: show cached count if available
+        const cached = localStorage.getItem('visitorCount')
+        if (cached) {
+          this.visitorCount = parseInt(cached, 10)
+        }
+      }
     }
   }
 }

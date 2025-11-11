@@ -402,9 +402,223 @@ export async function loadIdeas() {
       return Array.from(normalizedTags.values()).sort()
     }
     
+    // Helper function to validate and normalize saturation data
+    function validateSaturation(saturation, validation) {
+      // If no saturation data, try to create it from validation data
+      if (!saturation || typeof saturation !== 'object' || saturation === null) {
+        if (validation && validation.aggregatedScore) {
+          // Create saturation from validation data
+          const competitorCount = validation.aggregatedScore.totalCompetitors || 0;
+          return {
+            level: competitorCount >= 50 ? 'high' : competitorCount >= 10 ? 'medium' : 'low',
+            competitorCount: competitorCount,
+            marketType: competitorCount >= 20 ? 'red ocean' : 'blue ocean',
+            tam: competitorCount >= 100 ? '$1B+' : 
+                 competitorCount >= 50 ? '$500M+' :
+                 competitorCount >= 20 ? '$100M+' :
+                 competitorCount >= 10 ? '$50M+' :
+                 competitorCount > 0 ? '$10M+' : 'Unknown',
+            lastVerified: validation.sources?.[0]?.lastChecked || validation.lastChecked || new Date().toISOString()
+          };
+        }
+        return null;
+      }
+      
+      // Get competitor count from validation if available
+      const validationCompetitors = validation?.aggregatedScore?.totalCompetitors;
+      const saturationCompetitors = saturation.competitorCount;
+      
+      // Ensure competitorCount matches validation totalCompetitors if both exist
+      let competitorCount = saturationCompetitors;
+      if (validationCompetitors !== undefined && validationCompetitors !== null) {
+        // Prefer validation data as source of truth
+        competitorCount = validationCompetitors;
+      } else if (saturationCompetitors !== undefined && saturationCompetitors !== null) {
+        competitorCount = saturationCompetitors;
+      } else {
+        competitorCount = 0;
+      }
+      
+      // Ensure competitorCount is a valid number
+      competitorCount = Math.max(0, Math.floor(Number(competitorCount) || 0));
+      
+      // Validate and normalize saturation level
+      const validLevels = ['low', 'medium', 'high', 'unknown'];
+      let level = saturation.level;
+      if (!validLevels.includes(level)) {
+        // Recalculate level based on competitor count
+        if (competitorCount >= 50) {
+          level = 'high';
+        } else if (competitorCount >= 10) {
+          level = 'medium';
+        } else {
+          level = 'low';
+        }
+      }
+      
+      // Validate market type
+      const validMarketTypes = ['blue ocean', 'red ocean'];
+      let marketType = saturation.marketType;
+      if (!validMarketTypes.includes(marketType)) {
+        // Recalculate market type based on competitor count
+        marketType = competitorCount >= 20 ? 'red ocean' : 'blue ocean';
+      }
+      
+      // Validate TAM
+      let tam = saturation.tam;
+      if (!tam || typeof tam !== 'string') {
+        // Recalculate TAM based on competitor count
+        if (competitorCount >= 100) {
+          tam = '$1B+';
+        } else if (competitorCount >= 50) {
+          tam = '$500M+';
+        } else if (competitorCount >= 20) {
+          tam = '$100M+';
+        } else if (competitorCount >= 10) {
+          tam = '$50M+';
+        } else if (competitorCount > 0) {
+          tam = '$10M+';
+        } else {
+          tam = 'Unknown';
+        }
+      }
+      
+      // Validate lastVerified date
+      let lastVerified = saturation.lastVerified;
+      if (lastVerified) {
+        try {
+          const date = new Date(lastVerified);
+          if (isNaN(date.getTime())) {
+            lastVerified = new Date().toISOString();
+          } else {
+            lastVerified = date.toISOString();
+          }
+        } catch {
+          lastVerified = new Date().toISOString();
+        }
+      } else {
+        // Use validation date if available
+        const validationDate = validation?.sources?.[0]?.lastChecked || validation?.lastChecked;
+        if (validationDate) {
+          try {
+            const date = new Date(validationDate);
+            if (!isNaN(date.getTime())) {
+              lastVerified = date.toISOString();
+            }
+          } catch {}
+        }
+        if (!lastVerified) {
+          lastVerified = new Date().toISOString();
+        }
+      }
+      
+      return {
+        level,
+        competitorCount,
+        marketType,
+        tam,
+        lastVerified
+      };
+    }
+    
+    // Helper function to validate and normalize validation data
+    function validateValidation(validation) {
+      if (!validation || typeof validation !== 'object' || validation === null) {
+        return null;
+      }
+      
+      // Validate sources array
+      const sources = Array.isArray(validation.sources) ? validation.sources : [];
+      const validSources = sources.filter(source => {
+        return source && typeof source === 'object' && 
+               (source.source === 'internal_database' || source.source === 'google');
+      });
+      
+      // Validate aggregatedScore
+      let aggregatedScore = validation.aggregatedScore;
+      if (!aggregatedScore || typeof aggregatedScore !== 'object') {
+        // Calculate from sources if missing
+        let totalCompetitors = 0;
+        let totalSimilarity = 0;
+        let similarityCount = 0;
+        let confidence = 0;
+        
+        validSources.forEach(source => {
+          if (source.source === 'internal_database') {
+            totalCompetitors += source.similarIdeas || 0;
+            if (source.similarityScore) {
+              totalSimilarity += source.similarityScore;
+              similarityCount++;
+            }
+            confidence += 0.3;
+          } else if (source.source === 'google') {
+            totalCompetitors += source.competitorCount || 0;
+            confidence += 0.7;
+          }
+        });
+        
+        const avgSimilarity = similarityCount > 0 ? totalSimilarity / similarityCount : 0;
+        confidence = Math.min(confidence, 1.0);
+        
+        aggregatedScore = {
+          totalCompetitors: Math.max(0, Math.floor(totalCompetitors)),
+          avgSimilarity: Math.max(0, Math.min(1, avgSimilarity)),
+          confidence: Math.max(0, Math.min(1, confidence)),
+          sourcesCount: validSources.length
+        };
+      } else {
+        // Validate existing aggregatedScore
+        aggregatedScore = {
+          totalCompetitors: Math.max(0, Math.floor(aggregatedScore.totalCompetitors || 0)),
+          avgSimilarity: Math.max(0, Math.min(1, aggregatedScore.avgSimilarity || 0)),
+          confidence: Math.max(0, Math.min(1, aggregatedScore.confidence || 0)),
+          sourcesCount: Math.max(0, Math.floor(aggregatedScore.sourcesCount || validSources.length))
+        };
+      }
+      
+      // Validate status
+      const validStatuses = ['verified', 'pending', 'unverified'];
+      let status = validation.status;
+      if (!validStatuses.includes(status)) {
+        // Recalculate status based on aggregated score
+        if (aggregatedScore.totalCompetitors === 0) {
+          status = 'unverified';
+        } else if (aggregatedScore.totalCompetitors > 0 && aggregatedScore.confidence > 0.5) {
+          status = 'verified';
+        } else {
+          status = 'pending';
+        }
+      }
+      
+      return {
+        sources: validSources,
+        aggregatedScore,
+        status,
+        lastChecked: validation.lastChecked || validSources[0]?.lastChecked || null
+      };
+    }
+    
     // Transform the data to match our component structure
     // Tags are already cleaned and formatted in the JSON, so we just validate them
-    let ideas = data.ideas.map((idea, index) => ({
+    let ideas = data.ideas.map((idea, index) => {
+      // Validate and normalize validation data first
+      const validatedValidation = validateValidation(idea.validation);
+      
+      // Validate and normalize saturation data (using validation data for consistency)
+      const validatedSaturation = validateSaturation(idea.saturation, validatedValidation);
+      
+      // Debug: Log first few ideas with saturation/validation
+      if (index < 3) {
+        console.log(`🔍 Idea ${index + 1}:`, {
+          name: idea.name,
+          hasSaturation: !!validatedSaturation,
+          hasValidation: !!validatedValidation,
+          saturation: validatedSaturation,
+          validation: validatedValidation
+        })
+      }
+      
+      return {
       id: index + 1,
       name: idea.name,
       title: idea.name, // Keep title for compatibility
@@ -414,12 +628,40 @@ export async function loadIdeas() {
       tags: (idea.tags || []).filter(tag => 
         tag && typeof tag === 'string' && tag.length > 0 && !tag.match(/^[=\-_]{3,}$/)
       ),
+      // Add validated saturation and validation data
+      ...(validatedSaturation && { saturation: validatedSaturation }),
+      ...(validatedValidation && { validation: validatedValidation }),
+      ...(idea.category && { category: idea.category }),
       // Add metadata
       metadata: {
         totalIdeas: data.metadata.uniqueIdeas,
         generated: data.metadata.generated
       }
-    }))
+      }
+    })
+    
+    // Debug: Check how many ideas have saturation/validation after transformation
+    const withSaturation = ideas.filter(i => i.saturation && Object.keys(i.saturation).length > 0).length
+    const withValidation = ideas.filter(i => i.validation && Object.keys(i.validation).length > 0).length
+    
+    // Validate data consistency
+    let consistencyIssues = 0
+    ideas.forEach(idea => {
+      if (idea.saturation && idea.validation) {
+        const satCount = idea.saturation.competitorCount
+        const valCount = idea.validation.aggregatedScore?.totalCompetitors
+        if (satCount !== valCount && satCount !== undefined && valCount !== undefined) {
+          consistencyIssues++
+        }
+      }
+    })
+    
+    console.log(`✅ After transformation: ${withSaturation} ideas with saturation, ${withValidation} ideas with validation out of ${ideas.length} total`)
+    if (consistencyIssues > 0) {
+      console.warn(`⚠️  Found ${consistencyIssues} consistency issues between saturation and validation data (auto-corrected)`)
+    } else {
+      console.log(`✅ All saturation and validation data is consistent`)
+    }
     
     // Validate that tags are properly linked to ideas
     let totalTags = 0

@@ -22,6 +22,12 @@
           />
         </div>
         <div class="filter-group">
+          <CategoryFilter
+            :model-value="localFilters.category"
+            @update:model-value="handleCategoryChange"
+          />
+        </div>
+        <div class="filter-group">
           <CustomDropdown
             :model-value="localFilters.itemsPerPage"
             @update:model-value="handleItemsPerPageChange"
@@ -36,11 +42,13 @@
 
 <script>
 import CustomDropdown from './CustomDropdown.vue'
+import CategoryFilter from './CategoryFilter.vue'
 
 export default {
   name: 'FiltersSection',
   components: {
-    CustomDropdown
+    CustomDropdown,
+    CategoryFilter
   },
   props: {
     filters: {
@@ -57,6 +65,7 @@ export default {
       localFilters: {
         search: '',
         tag: '',
+        category: '',
         itemsPerPage: 25
       },
       itemsPerPageOptions: [
@@ -114,6 +123,10 @@ export default {
     },
     handleTagChange(value) {
       this.localFilters.tag = value
+      this.updateFilters()
+    },
+    handleCategoryChange(value) {
+      this.localFilters.category = value
       this.updateFilters()
     },
     handleItemsPerPageChange(value) {
